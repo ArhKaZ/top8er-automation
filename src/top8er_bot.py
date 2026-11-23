@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""POC: génère un visuel Top8er SSBU à partir d'un lien de tournoi start.gg
+et d'un fichier de skins de référence. Voir ../SPEC.md pour le détail du flux.
+"""
+import argparse
+import base64
+import datetime
+import re
+import sys
+from pathlib import Path
+
+import openpyxl
+import requests
+from bs4 import BeautifulSoup
+
+BASE_URL = "https://www.top8er.com/old/ssbu"
+
+FIXED_LCOLOR1 = "#f1c4ee"
+FIXED_LCOLOR2 = "#cecece"
+
+ALIASES = {
+    "r.o.b": "ROB",
+    "rob": "ROB",
+    "pac man": "Pac-Man",
+    "palu": "Palutena",
+    "dadidou": "King Dedede",
+    "pyra & mythra": "Pyra and Mythra",  # ordre non précisé dans le xlsx, "Pyra and Mythra" pris par défaut
+    "random character": "Random",  # libellé renvoyé par l'API start.gg pour une sélection aléatoire
+}
+
+
+def normalize(text: str) -> str:
+    text = str(text).strip().rstrip("*").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold()
+
+
+def normalize_char_name(name: str) -> str:
+    name = re.sub(r"\s+", " ", str(name).strip())
+    return name
+
+
+# ---------------------------------------------------------------------------
+# Step 1/2: fetch the page and parse the pre-filled form1 after importing the
+# tournament link via form2.
+# ---------------------------------------------------------------------------
+
+def get_csrf_and_cookies(session: requests.Session) -> str:
+    r = session.get(BASE_URL, timeout=30)
+    r.raise_for_status()
+    m = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.text)
+    if not m:
+        raise RuntimeError("csrfmiddlewaretoken introuvable sur la page GET")
+    return m.group(1)
+
+
+def import_tournament(session: requests.Session, csrf_token: str, event_url: str) -> str:
+    data = {"csrfmiddlewaretoken": csrf_token, "event": event_url}
+    r = session.post(BASE_URL, data=data, headers={"Referer": BASE_URL}, timeout=60)
+    r.raise_for_status()
+    return r.text
+
+
+def parse_form1_fields(html: str):
+    """Extrait tous les champs (hors file inputs) de form1 avec leur valeur
+    courante, telle que pré-remplie par Top8er après l'import."""
+    soup = BeautifulSoup(html, "html.parser")
+    form = soup.find("form", class_="form1")
+    if form is None:
+        raise RuntimeError("form1 introuvable dans la réponse (import du lien a-t-il échoué ?)")
+
+    fields = {}
+    checkboxes = {}
+
+    for inp in form.find_all("input"):
+        name = inp.get("name")
+        if not name:
+            continue
+        itype = inp.get("type", "text")
+        if itype in ("file", "submit", "image"):
+            continue
+        if itype == "checkbox":
+            checkboxes[name] = inp.has_attr("checked")
+        else:
+            fields[name] = inp.get("value", "")
+
+    for sel in form.find_all("select"):
+        name = sel.get("name")
+        if not name:
+            continue
+        chosen = sel.find("option", selected=True)
+        if chosen is None:
+            chosen = sel.find("option")
+        fields[name] = chosen.get("value", "") if chosen else ""
+
+    # roster / flag option lists, needed to validate overrides against the
+    # exact values the site accepts
+    char_select = form.find("select", attrs={"name": "player1_char"})
+    roster = [opt.get("value") for opt in char_select.find_all("option")]
+
+    csrf = fields.get("csrfmiddlewaretoken")
+    return fields, checkboxes, roster, csrf
+
+
+# ---------------------------------------------------------------------------
+# Skin xlsx loading + normalization
+# ---------------------------------------------------------------------------
+
+def parse_skin_cell(raw, roster_norm: dict):
+    """Retourne (char, color_str) ou (None, raison) si la cellule est vide,
+    illisible ou ambigüe (cf. SPEC.md, section "Cas ambigus")."""
+    if raw is None:
+        return None, None
+    text = str(raw).strip()
+    if not text:
+        return None, None
+
+    # le nom du personnage précède toujours le premier chiffre, quel que
+    # soit le texte d'annotation qui suit (virgules, "ou", parenthèses...)
+    m_first_digit = re.search(r"\d", text)
+    if m_first_digit is None:
+        return None, f"ambigu ou couleur manquante : {text!r}"
+    char_part = normalize_char_name(text[: m_first_digit.start()]).rstrip(" ,")
+    if not char_part:
+        return None, f"personnage vide après parsing : {text!r}"
+
+    m_default = re.search(r"(\d)\s*\(?\s*(?:par\s*d[ée]faut|default)", text, re.IGNORECASE)
+    if m_default:
+        color = m_default.group(1)
+    else:
+        digits = re.findall(r"(?<!\w)([0-7])(?!\w)", text)
+        if len(digits) != 1:
+            return None, f"ambigu ou couleur manquante : {text!r}"
+        color = digits[0]
+
+    key = ALIASES.get(char_part.casefold())
+    if key is None:
+        key = roster_norm.get(char_part.casefold())
+    if key is None:
+        return None, f"personnage non reconnu : {char_part!r} (brut: {text!r})"
+
+    return (key, color), None
+
+
+def load_skin_db(xlsx_path: Path, roster: list):
+    """Charge le xlsx en une table de skins indexée par joueur puis par
+    PERSONNAGE (et non plus par slot main/secondary/tertiary) : les colonnes
+    du fichier ne servent qu'à lister les skins connus pour ce joueur, le
+    choix du perso à afficher étant désormais déterminé par l'usage réel en
+    tournoi (cf. select_played_characters)."""
+    roster_norm = {normalize_char_name(r).casefold(): r for r in roster}
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    ws = wb.active
+
+    db = {}
+    ignored = []
+    rows = list(ws.iter_rows(values_only=True))[1:]
+    for row in rows:
+        name = row[0] if row else None
+        if not name or not str(name).strip():
+            continue
+        norm = normalize(name)
+        if not norm or norm == "`":
+            ignored.append((name, None, "nom de joueur illisible"))
+            continue
+
+        skins = {}
+        for slot, raw in zip(("main", "secondary", "tertiary"), row[1:4]):
+            parsed, reason = parse_skin_cell(raw, roster_norm)
+            if parsed:
+                char, color = parsed
+                skins[char] = color
+            elif reason:
+                ignored.append((name, slot, reason))
+        if skins:
+            db[norm] = {"raw_name": name, "skins": skins}
+    return db, ignored
+
+
+def find_skin_entry(player_name: str, skin_db: dict):
+    candidates = [player_name] + player_name.split("|")
+    for cand in candidates:
+        key = normalize(cand)
+        if key in skin_db:
+            return skin_db[key]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# start.gg: usage réel des personnages (nombre de games joués), pour décider
+# quels persos afficher par joueur.
+# ---------------------------------------------------------------------------
+
+STARTGG_API_URL = "https://api.start.gg/gql/alpha"
+
+EVENT_SETS_QUERY = """
+query EventSets($slug: String!, $page: Int!, $perPage: Int!) {
+  event(slug: $slug) {
+    id
+    sets(page: $page, perPage: $perPage, sortType: STANDARD) {
+      pageInfo { totalPages }
+      nodes {
+        id
+        slots { entrant { id name } }
+        games {
+          id
+          selections {
+            selectionType
+            entrant { id }
+            character { name }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def parse_event_slug(tournament_link: str) -> str:
+    """Extrait 'tournament/<slug>/event/<slug>' du lien start.gg fourni,
+    tel qu'attendu par l'API GraphQL (champ `slug` de `event`)."""
+    m = re.search(r"tournament/([^/]+)/event/([^/]+)", tournament_link)
+    if not m:
+        raise ValueError(f"lien start.gg inattendu, impossible d'en extraire le slug d'event : {tournament_link!r}")
+    return f"tournament/{m.group(1)}/event/{m.group(2)}"
+
+
+def fetch_character_usage(token: str, tournament_link: str) -> dict:
+    """Interroge l'API start.gg pour compter, par entrant (joueur), le nombre
+    de games joués par personnage sur l'ensemble de l'event (pools + bracket).
+    Retourne {entrant_name: {char_name: nb_games}}."""
+    slug = parse_event_slug(tournament_link)
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    usage = {}
+    page = 1
+    while True:
+        resp = requests.post(
+            STARTGG_API_URL,
+            headers=headers,
+            json={"query": EVENT_SETS_QUERY, "variables": {"slug": slug, "page": page, "perPage": 25}},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("errors"):
+            raise RuntimeError(f"erreur API start.gg : {payload['errors']}")
+        event = payload["data"]["event"]
+        if event is None:
+            raise RuntimeError(f"event introuvable sur start.gg pour le slug {slug!r}")
+        sets_data = event["sets"]
+        for s in sets_data["nodes"] or []:
+            entrant_by_id = {
+                slot["entrant"]["id"]: slot["entrant"]["name"]
+                for slot in (s.get("slots") or [])
+                if slot.get("entrant")
+            }
+            for game in s.get("games") or []:
+                for sel in game.get("selections") or []:
+                    if sel.get("selectionType") != "CHARACTER":
+                        continue
+                    char = (sel.get("character") or {}).get("name")
+                    entrant = (sel.get("entrant") or {}).get("id")
+                    if not char or entrant not in entrant_by_id:
+                        continue
+                    name = entrant_by_id[entrant]
+                    usage.setdefault(name, {})
+                    usage[name][char] = usage[name].get(char, 0) + 1
+        if page >= sets_data["pageInfo"]["totalPages"]:
+            break
+        page += 1
+    return usage
+
+
+def select_played_characters(usage_for_player: dict, roster_norm: dict):
+    """Applique la règle : perso joué = au moins 2 games ; on garde les 3 plus
+    joués, triés du plus joué au moins joué. Retourne une liste de noms de
+    perso (valeurs exactes du roster Top8er) ou [] si rien ne qualifie.
+    "Random Character" (sélection aléatoire côté start.gg) n'est pas un vrai
+    perso affichable (le site n'accepte même pas "Random" en secondaire/
+    tertiaire) : on l'exclut du classement plutôt que de planter la soumission."""
+    qualifying = [(char, n) for char, n in usage_for_player.items() if n >= 2]
+    qualifying.sort(key=lambda item: item[1], reverse=True)
+    resolved = []
+    unresolved = []
+    excluded_random = []
+    for char, n in qualifying:
+        if len(resolved) >= 3:
+            break
+        official = ALIASES.get(char.casefold()) or roster_norm.get(normalize_char_name(char).casefold())
+        if official is None:
+            unresolved.append((char, n))
+            continue
+        if official == "Random":
+            excluded_random.append((char, n))
+            continue
+        resolved.append((official, n))
+    return resolved, unresolved, excluded_random
+
+
+# ---------------------------------------------------------------------------
+# Apply overrides
+# ---------------------------------------------------------------------------
+
+SLOT_FIELDS = [("char", "color"), ("extra1", "extra_color1"), ("extra2", "extra_color2")]
+DEFAULT_COLOR = "0"
+
+
+def apply_overrides(fields: dict, skin_db: dict, usage: dict, roster: list, report: list):
+    roster_norm = {normalize_char_name(r).casefold(): r for r in roster}
+    for n in range(1, 9):
+        pname = fields.get(f"player{n}_name", "")
+        if not pname:
+            continue
+
+        usage_for_player = usage.get(pname)
+        if usage_for_player is None:
+            for cand in pname.split("|"):
+                usage_for_player = usage.get(cand.strip())
+                if usage_for_player is not None:
+                    break
+        if not usage_for_player:
+            report.append(f"player{n} ({pname!r}): aucune donnée de perso jouée sur start.gg, perso Top8er conservé")
+            continue
+
+        played, unresolved, excluded_random = select_played_characters(usage_for_player, roster_norm)
+        if unresolved:
+            report.append(f"player{n} ({pname!r}): perso non reconnu ignoré : {unresolved}")
+        if excluded_random:
+            report.append(f"player{n} ({pname!r}): sélection aléatoire exclue du classement : {excluded_random}")
+        if not played:
+            report.append(f"player{n} ({pname!r}): aucun perso joué >= 2 games, perso Top8er conservé")
+            continue
+
+        skin_entry = find_skin_entry(pname, skin_db)
+        player_skins = skin_entry["skins"] if skin_entry else {}
+
+        applied = []
+        for (char, games_count), (char_field, color_field) in zip(played, SLOT_FIELDS):
+            color = player_skins.get(char, DEFAULT_COLOR)
+            source = "xlsx" if char in player_skins else "défaut"
+            fields[f"player{n}_{char_field}"] = char
+            fields[f"player{n}_{color_field}"] = color
+            applied.append(f"{char} #{color} ({source}, {games_count} games)")
+        # un perso déjà positionné a droit à un slot fixe ; si moins de 3
+        # persos qualifient, les slots restants gardent la valeur Top8er
+        # (généralement vide) sans y toucher.
+        report.append(f"player{n} ({pname!r}): {', '.join(applied)}")
+
+
+# ---------------------------------------------------------------------------
+# Final POST + result extraction
+# ---------------------------------------------------------------------------
+
+def submit_generation(session, csrf_token, fields, checkboxes, font_file, background, logo):
+    data = {"csrfmiddlewaretoken": csrf_token}
+    data.update(fields)
+    data["lcolor1"] = FIXED_LCOLOR1
+    data["lcolor2"] = FIXED_LCOLOR2
+    for name, checked in checkboxes.items():
+        if checked:
+            data[name] = "on"
+
+    files = {
+        "font_file": (font_file.name, open(font_file, "rb")),
+        "background": (background.name, open(background, "rb")),
+        "logo": (logo.name, open(logo, "rb")),
+    }
+    try:
+        r = session.post(BASE_URL, data=data, files=files, headers={"Referer": BASE_URL}, timeout=120)
+    finally:
+        for _, (_, fh) in files.items():
+            fh.close()
+    r.raise_for_status()
+    return r.text
+
+
+def extract_result_image(html: str):
+    soup = BeautifulSoup(html, "html.parser")
+
+    # le visuel généré est embarqué en base64 ; de nombreux <img> non liés au
+    # résultat (logos d'autres jeux, etc.) sont présents ailleurs sur la page,
+    # donc on cherche directement une source data:image plutôt que de
+    # naviguer depuis l'ancre #result.
+    for candidate in soup.find_all("img"):
+        src = candidate.get("src", "").strip()
+        if src.startswith("data:image"):
+            header, b64data = src.split(",", 1)
+            ext = header.split("/")[1].split(";")[0]
+            return ext, base64.b64decode(b64data.strip())
+
+    anchor = soup.find(attrs={"id": "result"}) or soup.find(attrs={"name": "result"})
+    img = (anchor.find("img") or anchor.find_next("img")) if anchor is not None else None
+    if img is None:
+        return None
+    return ("url", img.get("src", ""))
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="POC automatisation Top8er SSBU")
+    parser.add_argument("tournament_link", help="Lien start.gg/challonge/tonamel/parry.gg")
+    parser.add_argument("--background", required=True, type=Path, help="Image de fond")
+    parser.add_argument("--logo", required=True, type=Path, help="Logo")
+    parser.add_argument(
+        "--startgg-token", required=True,
+        help="Token API start.gg (developer.start.gg -> Developer Settings -> Create new token)",
+    )
+    parser.add_argument(
+        "--skins", type=Path,
+        default=Path(__file__).parent.parent / "data" / "Skins des joueurs et joueuses.xlsx",
+    )
+    parser.add_argument(
+        "--font", type=Path,
+        default=Path(__file__).parent.parent / "data" / "Basteleur-Bold.ttf",
+    )
+    parser.add_argument(
+        "--outdir", type=Path,
+        default=Path(__file__).parent.parent / "output",
+    )
+    args = parser.parse_args()
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+    print(f"[1/4] GET {BASE_URL}")
+    csrf = get_csrf_and_cookies(session)
+
+    print(f"[2/4] POST import du tournoi : {args.tournament_link}")
+    imported_html = import_tournament(session, csrf, args.tournament_link)
+    fields, checkboxes, roster, csrf2 = parse_form1_fields(imported_html)
+    if csrf2:
+        csrf = csrf2
+
+    print("[3/4] Résolution des skins depuis le xlsx + usage réel des persos (API start.gg)")
+    skin_db, ignored = load_skin_db(args.skins, roster)
+    usage = fetch_character_usage(args.startgg_token, args.tournament_link)
+    report = []
+    apply_overrides(fields, skin_db, usage, roster, report)
+
+    print("\n--- Rapport ---")
+    for line in report:
+        print(" -", line)
+    if ignored:
+        print("\nLignes xlsx ignorées :")
+        for item in ignored:
+            print(" -", item)
+
+    print("\n[4/4] POST génération finale (police + couleurs + background + logo)")
+    result_html = submit_generation(session, csrf, fields, checkboxes, args.font, args.background, args.logo)
+
+    args.outdir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", args.tournament_link.rstrip("/").split("/")[-1]) or "tournoi"
+
+    raw_path = args.outdir / f"{timestamp}-{slug}.response.html"
+    raw_path.write_text(result_html, encoding="utf-8")
+    print(f"Réponse brute sauvegardée : {raw_path}")
+
+    extracted = extract_result_image(result_html)
+    if extracted is None:
+        print("Image de résultat non détectée automatiquement — inspecter la réponse HTML ci-dessus.")
+    else:
+        kind, payload = extracted
+        if kind == "url":
+            print(f"Image de résultat référencée par URL : {payload}")
+        else:
+            img_path = args.outdir / f"{timestamp}-{slug}.{kind}"
+            img_path.write_bytes(payload)
+            print(f"Image de résultat sauvegardée : {img_path}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
