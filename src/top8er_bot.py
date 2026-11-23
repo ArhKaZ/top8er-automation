@@ -114,7 +114,10 @@ def parse_form1_fields(html: str):
 # ---------------------------------------------------------------------------
 
 def parse_skin_cell(raw, roster_norm: dict):
-    """Retourne (char, color_str) ou (None, raison) si la cellule est vide,
+    """Parse une cellule "<Personnage> <couleur>" combinée (ancien format
+    MAIN/SECONDARY/TERTIARY). N'est plus utilisée par load_skin_db (format
+    triplet désormais), gardée pour migrate_skins_format.py.
+    Retourne (char, color_str) ou (None, raison) si la cellule est vide,
     illisible ou ambigüe (cf. SPEC.md, section "Cas ambigus")."""
     if raw is None:
         return None, None
@@ -150,16 +153,17 @@ def parse_skin_cell(raw, roster_norm: dict):
 
 
 def load_skin_db(xlsx_path: Path, roster: list):
-    """Charge le xlsx en une table de skins indexée par joueur puis par
-    PERSONNAGE (et non plus par slot main/secondary/tertiary) : les colonnes
-    du fichier ne servent qu'à lister les skins connus pour ce joueur, le
-    choix du perso à afficher étant désormais déterminé par l'usage réel en
-    tournoi (cf. select_played_characters)."""
+    """Charge le xlsx (format triplet : une ligne = Joueur | Perso | skin)
+    en une table de skins indexée par joueur puis par PERSONNAGE. Si
+    plusieurs lignes donnent un skin différent pour le même (joueur, perso),
+    on garde le skin le plus bas qui ne soit pas 0 (0 seulement si c'est la
+    seule valeur disponible)."""
     roster_norm = {normalize_char_name(r).casefold(): r for r in roster}
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb.active
 
-    db = {}
+    raw_names = {}
+    skins_by_player = {}
     ignored = []
     rows = list(ws.iter_rows(values_only=True))[1:]
     for row in rows:
@@ -171,16 +175,39 @@ def load_skin_db(xlsx_path: Path, roster: list):
             ignored.append((name, None, "nom de joueur illisible"))
             continue
 
-        skins = {}
-        for slot, raw in zip(("main", "secondary", "tertiary"), row[1:4]):
-            parsed, reason = parse_skin_cell(raw, roster_norm)
-            if parsed:
-                char, color = parsed
-                skins[char] = color
-            elif reason:
-                ignored.append((name, slot, reason))
-        if skins:
-            db[norm] = {"raw_name": name, "skins": skins}
+        char_raw = row[1] if len(row) > 1 else None
+        if not char_raw or not str(char_raw).strip():
+            continue  # ligne sans perso renseigné pour ce joueur
+
+        char_part = normalize_char_name(str(char_raw))
+        official = ALIASES.get(char_part.casefold()) or roster_norm.get(char_part.casefold())
+        if official is None:
+            ignored.append((name, char_raw, f"personnage non reconnu : {char_raw!r}"))
+            continue
+
+        skin_raw = row[2] if len(row) > 2 else None
+        if skin_raw is None or str(skin_raw).strip() == "":
+            skin = 0
+        else:
+            try:
+                skin = int(skin_raw)
+            except (TypeError, ValueError):
+                ignored.append((name, char_raw, f"skin non numérique : {skin_raw!r}"))
+                continue
+            if not 0 <= skin <= 7:
+                ignored.append((name, char_raw, f"skin hors plage 0-7 : {skin_raw!r}"))
+                continue
+
+        raw_names.setdefault(norm, name)
+        skins_by_player.setdefault(norm, {}).setdefault(official, []).append(skin)
+
+    db = {}
+    for norm, char_values in skins_by_player.items():
+        resolved = {}
+        for char, values in char_values.items():
+            nonzero = [v for v in values if v != 0]
+            resolved[char] = min(nonzero) if nonzero else 0
+        db[norm] = {"raw_name": raw_names[norm], "skins": resolved}
     return db, ignored
 
 
