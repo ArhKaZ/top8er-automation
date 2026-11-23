@@ -15,7 +15,7 @@ Le site ne propose pas d'API JSON : c'est une app Django classique, formulaire H
 | Entrée | Valeur / emplacement |
 |---|---|
 | Lien de tournoi | fourni par l'utilisateur à chaque exécution (CLI arg)<br>ex. testé : `start.gg/tournament/la-tea-party-50/event/ultimate-singles/brackets/2458265/3533671` |
-| Fichier skins | `~/Downloads/Skins des joueurs et joueuses.xlsx` (feuille unique, colonnes : Nom, MAIN, SECONDARY, TERTIARY) |
+| Fichier skins | `data/skin.xlsx` (format triplet, colonnes : Joueur, Perso, skin — voir plus bas) |
 | Police custom | `~/Downloads/Basteleur-Bold.ttf` |
 | Main Color | `#f1c4ee` → champ `lcolor1` |
 | Highlight Color | `#CECECE` → champ `lcolor2` |
@@ -85,7 +85,7 @@ Une fois les personnages à afficher déterminés (section précédente), le xls
 
 ### Format du fichier source (v2 — triplet)
 
-Une ligne = un triplet `Joueur | Perso | skin` (plus de colonnes MAIN/SECONDARY/TERTIARY) : un joueur ayant plusieurs persos connus a simplement plusieurs lignes. `Perso` et `skin` sont des listes déroulantes (roster SSBU complet / 0-7) alimentées par une feuille annexe "Listes", pour éviter les fautes de saisie en amont. Fichier d'exemple avec les listes : `data/example-skins.xlsx`.
+Une ligne = un triplet `Joueur | Perso | skin` (plus de colonnes MAIN/SECONDARY/TERTIARY) : un joueur ayant plusieurs persos connus a simplement plusieurs lignes. `Perso` et `skin` sont des listes déroulantes (roster SSBU complet / 0-7) alimentées par une feuille annexe "Listes", pour éviter les fautes de saisie en amont. Un joueur qui a plusieurs persos connus a donc plusieurs lignes (même nom dans la colonne `Joueur`, répété autant de fois que de persos). Fichier d'exemple avec les listes : `data/skin.example.xlsx` (à copier/renommer en `data/skin.xlsx`, le chemin par défaut attendu par le script).
 
 **Migration depuis l'ancien format** : `src/migrate_skins_format.py <ancien.xlsx> <nouveau.xlsx>` convertit automatiquement les colonnes MAIN/SECONDARY/TERTIARY en lignes triplet (colonnes repérées par leur en-tête, pas par position fixe, pour tolérer des colonnes réordonnées/ajoutées). Les cellules ambiguës de l'ancien format ne sont pas migrées automatiquement (cf. liste ci-dessous) : elles sont listées en sortie du script pour être recomplétées à la main dans le fichier généré.
 

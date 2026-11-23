@@ -519,7 +519,7 @@ def main():
     )
     parser.add_argument(
         "--skins", type=Path,
-        default=Path(__file__).parent.parent / "data" / "Skins des joueurs et joueuses.xlsx",
+        default=Path(__file__).parent.parent / "data" / "skin.xlsx",
     )
     parser.add_argument(
         "--font", type=Path,

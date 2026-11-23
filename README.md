@@ -8,30 +8,87 @@ Voir [`SPEC.md`](./SPEC.md) pour le détail des règles fonctionnelles.
 
 ## Installation
 
+### Linux / macOS
+
+```bash
+./scripts/install.sh
+```
+
+ou manuellement :
+
 ```bash
 pip install --user requests beautifulsoup4 openpyxl
 ```
 
-Pour le mode `--review` (facultatif, voir plus bas), il faut en plus :
+### Windows
+
+Installer [Python 3](https://python.org) (cocher *Add python.exe to PATH* pendant
+l'installation), puis depuis PowerShell :
+
+```powershell
+.\scripts\install.ps1
+```
+
+ou manuellement :
+
+```powershell
+python -m pip install --user requests beautifulsoup4 openpyxl
+```
+
+Si PowerShell bloque l'exécution du script (`execution of scripts is disabled`) :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+### Mode `--review` (facultatif)
+
+En plus des dépendances ci-dessus (les scripts d'install le proposent automatiquement) :
 
 ```bash
 pip install --user playwright
 ```
 
 Un Google Chrome déjà installé sur la machine suffit (le script le pilote via
-`channel="chrome"`) — pas besoin de `playwright install`.
+`channel="chrome"`) — pas besoin de `playwright install`, sur Linux comme sur Windows.
 
 ## Données locales requises
 
 Ce repo ne versionne pas les données spécifiques à un contexte (pseudos réels de joueurs,
 police avec licence non vérifiée). À placer soi-même avant de lancer le script :
 
-- `data/Skins des joueurs et joueuses.xlsx` — format triplet, une ligne = un (joueur, perso, skin) :
-  colonnes `Joueur | Perso | skin`. Un joueur avec plusieurs persos a plusieurs lignes.
-  Exemple complet avec les listes déroulantes (perso + skin 0-7) : [`data/example-skins.xlsx`](./data/example-skins.xlsx).
-  Si plusieurs lignes donnent un skin différent pour le même (joueur, perso), le script garde
-  le skin le plus bas qui n'est pas 0.
+- `data/skin.xlsx` — le fichier de skins (voir format détaillé ci-dessous).
 - `data/Basteleur-Bold.ttf` (ou une autre police, en passant `--font`).
+
+### Format du fichier skin (`data/skin.xlsx`)
+
+Tableur avec deux feuilles :
+
+- **Sheet1** — une ligne par **couple (joueur, personnage)** : colonnes `Joueur | Perso | skin`.
+  **Un joueur qui a plusieurs persos connus a donc plusieurs lignes** (une par perso), toutes
+  avec le même nom dans la colonne `Joueur` — il n'y a pas de colonne séparée par perso
+  (plus de MAIN/SECONDARY/TERTIARY).
+- **Listes** — feuille annexe servant de source aux deux listes déroulantes de Sheet1 :
+  colonne `perso` (roster SSBU complet) et colonne `skin` (0 à 7).
+
+| Joueur | Perso | skin |
+|---|---|---|
+| ExampleJoueur1 | Mario | 2 |
+| ExampleJoueur1 | Luigi | 0 |
+| ExampleJoueur2 | Fox | 5 |
+
+(ici ExampleJoueur1 a deux lignes, une par personnage ; ExampleJoueur2 n'en a qu'une.)
+
+Si plusieurs lignes donnent un skin différent pour le même (joueur, perso) — par exemple
+après une mise à jour —, le script garde le skin le plus bas qui n'est pas 0 (0 uniquement
+s'il n'y a pas d'autre valeur).
+
+Fichier d'exemple déjà rempli, avec les listes déroulantes en place :
+[`data/skin.example.xlsx`](./data/skin.example.xlsx) — à copier/renommer en `data/skin.xlsx`
+et à compléter avec tes propres joueurs. Captures d'écran du format ci-dessous.
+
+![Sheet1 : une ligne par (joueur, perso), avec les listes déroulantes](./docs/skin-xlsx-sheet1.png)
+![Feuille Listes : source des deux listes déroulantes](./docs/skin-xlsx-listes.png)
 
 ### Migrer depuis l'ancien format
 
@@ -48,12 +105,24 @@ manuelle dans le fichier généré (qui a déjà les listes déroulantes perso/s
 
 ## Utilisation
 
+**Linux / macOS :**
+
 ```bash
 python3 src/top8er_bot.py "<lien de tournoi start.gg>" \
   --background <image.png/webp> \
   --logo <image.png/webp> \
   --startgg-token <token API start.gg>
 ```
+
+**Windows (PowerShell ou invite de commandes), depuis la racine du repo :**
+
+```powershell
+python src\top8er_bot.py "<lien de tournoi start.gg>" --background <image.png> --logo <logo.png> --startgg-token <token API start.gg>
+```
+
+(sur Windows, la commande est `python` et non `python3` ; les chemins utilisent `\` au lieu
+de `/`, et l'enchaînement de lignes avec `\` ne fonctionne pas en PowerShell — tout tenir sur
+une seule ligne, ou utiliser `` ` `` en fin de ligne si tu préfères du multi-lignes.)
 
 Le token API start.gg se génère gratuitement sur
 [developer.start.gg](https://developer.start.gg) → Developer Settings → Create new token.
@@ -66,7 +135,7 @@ Le token API start.gg se génère gratuitement sur
 | `--background` | oui | Image de fond du visuel |
 | `--logo` | oui | Logo (remplace le texte en haut à gauche) |
 | `--startgg-token` | oui | Token API start.gg |
-| `--skins` | non | Chemin du xlsx de skins (défaut : `data/Skins des joueurs et joueuses.xlsx`) |
+| `--skins` | non | Chemin du xlsx de skins (défaut : `data/skin.xlsx`) |
 | `--font` | non | Chemin de la police (défaut : `data/Basteleur-Bold.ttf`) |
 | `--outdir` | non | Dossier de sortie (défaut : `output/`) |
 | `--review` | non | Bloque avant la génération finale : ouvre un vrai navigateur (profil Chrome isolé, dédié à cet usage) avec le formulaire déjà pré-rempli par nos calculs (skins + persos joués), pour relecture/modification manuelle. Rien n'est généré automatiquement : c'est à toi de cliquer sur "Generate" dans le navigateur. Le script rend la main quand tu fermes la fenêtre. |
