@@ -26,9 +26,25 @@ Un Google Chrome déjà installé sur la machine suffit (le script le pilote via
 Ce repo ne versionne pas les données spécifiques à un contexte (pseudos réels de joueurs,
 police avec licence non vérifiée). À placer soi-même avant de lancer le script :
 
-- `data/Skins des joueurs et joueuses.xlsx` — colonnes `Nom | MAIN | SECONDARY | TERTIARY`,
-  une cellule perso = `"<Personnage> <couleur 0-7>"`.
+- `data/Skins des joueurs et joueuses.xlsx` — format triplet, une ligne = un (joueur, perso, skin) :
+  colonnes `Joueur | Perso | skin`. Un joueur avec plusieurs persos a plusieurs lignes.
+  Exemple complet avec les listes déroulantes (perso + skin 0-7) : [`data/example-skins.xlsx`](./data/example-skins.xlsx).
+  Si plusieurs lignes donnent un skin différent pour le même (joueur, perso), le script garde
+  le skin le plus bas qui n'est pas 0.
 - `data/Basteleur-Bold.ttf` (ou une autre police, en passant `--font`).
+
+### Migrer depuis l'ancien format
+
+L'ancien format (`Nom | MAIN | SECONDARY | TERTIARY`, un perso par colonne) peut être converti
+automatiquement :
+
+```bash
+python3 src/migrate_skins_format.py "ancien.xlsx" "nouveau.xlsx"
+```
+
+Les cellules ambiguës de l'ancien format (plusieurs choix, couleur manquante, perso non
+reconnu) ne sont pas migrées automatiquement et sont listées en sortie pour complétion
+manuelle dans le fichier généré (qui a déjà les listes déroulantes perso/skin).
 
 ## Utilisation
 
@@ -63,3 +79,15 @@ Le token API start.gg se génère gratuitement sur
 Le script affiche aussi en console, pour chaque joueur, les personnages retenus (avec leur
 nombre de games joués et la source de leur couleur) ainsi que les lignes du xlsx ignorées
 car ambiguës.
+
+## Licence et avertissement
+
+Le code de ce repo est sous licence MIT (voir [`LICENSE`](./LICENSE)) : libre réutilisation,
+modification et redistribution, sans garantie.
+
+Ce projet n'est ni affilié à, ni approuvé par Top8er ou start.gg. Il automatise un
+formulaire public de Top8er et appelle l'API GraphQL de start.gg ; utiliser ce script reste
+soumis à leurs propres conditions d'utilisation respectives (notamment les *Developer
+Terms* de start.gg, acceptées lors de la création d'un token API) — la licence MIT ci-dessus
+porte uniquement sur le code de ce repo, elle n'accorde aucun droit d'usage sur ces services
+tiers.

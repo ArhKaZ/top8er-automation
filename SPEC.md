@@ -81,30 +81,32 @@ Options globales à fixer dans toutes les générations :
 
 ## Résolution de la couleur (skins) depuis le xlsx
 
-Une fois les personnages à afficher déterminés (section précédente), le xlsx sert uniquement à fournir la **couleur** : pour chaque (joueur, personnage retenu), si le xlsx a un skin connu pour CE personnage précis chez ce joueur, on applique sa couleur ; sinon, **couleur par défaut = `0`**. Les colonnes MAIN/SECONDARY/TERTIARY du xlsx ne sont donc plus interprétées comme des slots fixes mais comme une simple liste de skins connus par joueur (peu importe la colonne d'origine).
+Une fois les personnages à afficher déterminés (section précédente), le xlsx sert uniquement à fournir la **couleur** : pour chaque (joueur, personnage retenu), si le xlsx a un skin connu pour CE personnage précis chez ce joueur, on applique sa couleur ; sinon, **couleur par défaut = `0`**.
 
-### Format du fichier source
+### Format du fichier source (v2 — triplet)
 
-Une ligne par joueur·euse : `Nom | MAIN | SECONDARY | TERTIARY`, où une cellule perso = `"<Personnage> <couleur 0-7>"` (parfois avec variantes/fautes). Le fichier ne couvre pas tous les participant.e.s d'un tournoi donné (c'est une base de référence multi-tournois).
+Une ligne = un triplet `Joueur | Perso | skin` (plus de colonnes MAIN/SECONDARY/TERTIARY) : un joueur ayant plusieurs persos connus a simplement plusieurs lignes. `Perso` et `skin` sont des listes déroulantes (roster SSBU complet / 0-7) alimentées par une feuille annexe "Listes", pour éviter les fautes de saisie en amont. Fichier d'exemple avec les listes : `data/example-skins.xlsx`.
+
+**Migration depuis l'ancien format** : `src/migrate_skins_format.py <ancien.xlsx> <nouveau.xlsx>` convertit automatiquement les colonnes MAIN/SECONDARY/TERTIARY en lignes triplet (colonnes repérées par leur en-tête, pas par position fixe, pour tolérer des colonnes réordonnées/ajoutées). Les cellules ambiguës de l'ancien format ne sont pas migrées automatiquement (cf. liste ci-dessous) : elles sont listées en sortie du script pour être recomplétées à la main dans le fichier généré.
+
+**Doublons** : si plusieurs lignes donnent un skin différent pour le même (joueur, perso) — par exemple après des mises à jour successives —, on garde le skin le plus bas qui n'est pas `0` ; `0` seulement s'il n'y a pas d'autre valeur.
 
 ### Règles de normalisation requises
 
 1. **Matching du nom de joueur** : comparaison insensible à la casse et aux espaces de début/fin, contre le `playerN_name` (= `entrant.name` start.gg). Les suffixes de type `*` en fin de nom (ex. `"Alexandre*"`) doivent être ignorés pour le matching mais signalés dans les logs. Les tags start.gg suivent un format `EQUIPE | Pseudo`, parfois à plusieurs segments (`"E0 | PINGU | Ana"`) : le matching découpe sur `|` et essaie chaque segment, pas seulement le dernier.
-2. **Parsing d'une cellule perso** : le nom du personnage est tout ce qui précède le premier chiffre de la cellule ; la couleur est ce chiffre (sauf mention explicite "X par défaut", auquel cas on prend ce X). Mapper le nom vers la valeur exacte attendue par le `<select>` de Top8er via une **table d'alias** à construire, incluant au minimum les cas observés dans le fichier actuel et dans les données start.gg :
+2. **Résolution du nom de perso** : mapper la valeur de la colonne `Perso` vers la valeur exacte attendue par le `<select>` de Top8er via une **table d'alias** à construire, incluant au minimum les cas observés jusqu'ici (utile surtout pour la migration depuis l'ancien format, où les noms étaient en texte libre) :
    - `"R.O.B"` → `"ROB"`
    - `"Pac Man"` → `"Pac-Man"`
    - `"Palu"` / `"palu"` → `"Palutena"`
    - `"Dadidou"` → `"King Dedede"`
-   - `"Pyra & Mythra"` → `"Pyra and Mythra"` (ordre non précisé dans le xlsx, "Pyra and Mythra" pris par défaut)
-   - `"Random Character"` (libellé API start.gg) → `"Random"` (valeur Top8er) — mais exclu du classement des persos affichés, cf. règle 5 ci-dessus
+   - `"Pyra & Mythra"` → `"Pyra and Mythra"` (ordre non précisé, "Pyra and Mythra" pris par défaut)
+   - `"Random Character"` (libellé API start.gg) → `"Random"` (valeur Top8er) — mais exclu du classement des persos affichés, cf. règle 5 de la section précédente
    - (table à compléter si d'autres surnoms apparaissent)
-3. **Cas ambigus/non résolubles automatiquement dans le xlsx** — ne **pas** deviner, logguer un avertissement explicite, la couleur retombe alors sur la valeur par défaut (`0`) :
-   - couleur manquante ou non numérique (ex. `"Mr Game & Watch ??"`)
-   - plusieurs choix listés dans une cellule (ex. `"Yoshi 1, 2, 5, 7 (choisir)"`, `"Palu 1, 6 ou 7 (6 par défaut)"`) — **exception** : si le texte contient explicitement une mention "par défaut", utiliser cette valeur par défaut plutôt que de logguer un simple avertissement.
-   - cellule contenant visiblement plusieurs personnages différents dans une même colonne (ex. `"Donkey Kong 1, Pokemon Trainer 6"`).
-   - nom de personnage non reconnu même après la table d'alias.
-   - ligne avec nom de joueur illisible (ex. la ligne dont le nom est juste `` ` ``) → ignorer, logguer.
-4. **Rapport de synthèse** : à chaque exécution, produire un résumé texte listant, par joueur : les personnages retenus (avec nombre de games et source de la couleur, xlsx ou défaut), les personnages non reconnus ou exclus (Random), et séparément les lignes du xlsx ignorées à cause d'une ambiguïté (avec la raison).
+3. **Lignes non résolubles automatiquement** — ne **pas** deviner, logguer un avertissement explicite, la couleur retombe alors sur la valeur par défaut (`0`) :
+   - perso non reconnu même après la table d'alias ;
+   - skin non numérique ou hors plage 0-7 (ne devrait plus arriver avec la liste déroulante, mais reste possible en cas de collage de valeur brute) ;
+   - ligne avec nom de joueur illisible (ex. la ligne dont le nom est juste `` ` ``).
+4. **Rapport de synthèse** : à chaque exécution, produire un résumé texte listant, par joueur : les personnages retenus (avec nombre de games et source de la couleur, xlsx ou défaut), les personnages non reconnus ou exclus (Random), et séparément les lignes du xlsx ignorées (avec la raison).
 
 ## Mode revue (`--review`)
 
