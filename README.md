@@ -12,6 +12,15 @@ Voir [`SPEC.md`](./SPEC.md) pour le détail des règles fonctionnelles.
 pip install --user requests beautifulsoup4 openpyxl
 ```
 
+Pour le mode `--review` (facultatif, voir plus bas), il faut en plus :
+
+```bash
+pip install --user playwright
+```
+
+Un Google Chrome déjà installé sur la machine suffit (le script le pilote via
+`channel="chrome"`) — pas besoin de `playwright install`.
+
 ## Données locales requises
 
 Ce repo ne versionne pas les données spécifiques à un contexte (pseudos réels de joueurs,
@@ -44,6 +53,7 @@ Le token API start.gg se génère gratuitement sur
 | `--skins` | non | Chemin du xlsx de skins (défaut : `data/Skins des joueurs et joueuses.xlsx`) |
 | `--font` | non | Chemin de la police (défaut : `data/Basteleur-Bold.ttf`) |
 | `--outdir` | non | Dossier de sortie (défaut : `output/`) |
+| `--review` | non | Bloque avant la génération finale : ouvre un vrai navigateur (profil Chrome isolé, dédié à cet usage) avec le formulaire déjà pré-rempli par nos calculs (skins + persos joués), pour relecture/modification manuelle. Rien n'est généré automatiquement : c'est à toi de cliquer sur "Generate" dans le navigateur. Le script rend la main quand tu fermes la fenêtre. |
 
 ### Sortie
 

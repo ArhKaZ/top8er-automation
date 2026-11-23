@@ -76,7 +76,7 @@ Options globales à fixer dans toutes les générations :
 - Endpoint : `POST https://api.start.gg/gql/alpha`, header `Authorization: Bearer <token>`.
 - Le slug d'event (`tournament/<t>/event/<e>`) s'extrait directement du lien de tournoi fourni en entrée (même lien que pour l'import Top8er).
 - Requête : `event(slug) { sets(page, perPage) { nodes { slots { entrant { id name } } games { selections { selectionType entrant { id } character { name } } } } } }`, paginée.
-- **Limite de complexité de l'API** : un `perPage` trop élevé déclenche une erreur `"query complexity is too high"` (observé dès 60) ; `perPage: 25` passe de manière fiable sur le tournoi testé (~43 participantes).
+- **Limite de complexité de l'API** : un `perPage` trop élevé déclenche une erreur `"query complexity is too high"` (observé dès 60) ; `perPage: 25` passe de manière fiable sur le tournoi testé (~43 participant.e.s).
 - Le nom d'entrant (`entrant.name`) correspond au même `playerN_name` que celui importé par Top8er (même source de données start.gg), donc le même matching par segments `|` (cf. règle de matching ci-dessous) s'applique pour relier usage et xlsx.
 
 ## Résolution de la couleur (skins) depuis le xlsx
@@ -85,7 +85,7 @@ Une fois les personnages à afficher déterminés (section précédente), le xls
 
 ### Format du fichier source
 
-Une ligne par joueur·euse : `Nom | MAIN | SECONDARY | TERTIARY`, où une cellule perso = `"<Personnage> <couleur 0-7>"` (parfois avec variantes/fautes). Le fichier ne couvre pas tous les participants d'un tournoi donné (c'est une base de référence multi-tournois).
+Une ligne par joueur·euse : `Nom | MAIN | SECONDARY | TERTIARY`, où une cellule perso = `"<Personnage> <couleur 0-7>"` (parfois avec variantes/fautes). Le fichier ne couvre pas tous les participant.e.s d'un tournoi donné (c'est une base de référence multi-tournois).
 
 ### Règles de normalisation requises
 
@@ -105,6 +105,18 @@ Une ligne par joueur·euse : `Nom | MAIN | SECONDARY | TERTIARY`, où une cellul
    - nom de personnage non reconnu même après la table d'alias.
    - ligne avec nom de joueur illisible (ex. la ligne dont le nom est juste `` ` ``) → ignorer, logguer.
 4. **Rapport de synthèse** : à chaque exécution, produire un résumé texte listant, par joueur : les personnages retenus (avec nombre de games et source de la couleur, xlsx ou défaut), les personnages non reconnus ou exclus (Random), et séparément les lignes du xlsx ignorées à cause d'une ambiguïté (avec la raison).
+
+## Mode revue (`--review`)
+
+Option qui bloque avant la génération finale (étape 4) : au lieu du POST final via `requests`, elle pilote un vrai navigateur (Playwright, Chrome système via `channel="chrome"`, profil isolé dédié pour ne pas interférer avec le Chrome personnel de l'utilisateur) qui :
+
+1. navigue sur le site, importe le tournoi (reproduit l'étape 2 depuis le navigateur, avec sa propre session/CSRF) ;
+2. remplit le formulaire `form1` avec exactement les valeurs calculées par le script (skins + persos joués + couleurs/police/background/logo fixes) ;
+3. laisse la fenêtre ouverte, sans cliquer sur "Generate" : l'utilisateur relit/modifie à la main, puis clique lui-même quand il est prêt. Le script rend la main quand la fenêtre est fermée.
+
+> **Pièges rencontrés et corrigés en conditions réelles** : plusieurs sections du formulaire sont repliées par défaut (`display:none`) et doivent être dépliées par un clic avant de pouvoir y écrire quoi que ce soit : l'onglet "Enter tournament link" (`button.sggform`) pour révéler `form2`, "+ Layout Options" (`span.togglelayopt`, contient `lcolor1`/`lcolor2`) et "+ Font Options" (`span.togglefontopt`, contient `fontt`/`font_file`), ainsi qu'un bouton "+" (`span.showextra`) **par joueur** (8 au total) pour révéler les champs perso secondaire/tertiaire (`extra1`/`extra2`).
+
+Dépendance additionnelle, uniquement pour cette option : `playwright` (pip), en s'appuyant sur un Google Chrome déjà installé sur la machine plutôt que sur un téléchargement de navigateur dédié.
 
 ## Sorties attendues
 
@@ -127,7 +139,7 @@ Python + `requests` (gestion cookies/session native, + appel GraphQL start.gg) +
 1. ✅ Format de la réponse après le POST final : image embarquée en base64 (`<img src="data:image/png;...base64,...">`), à extraire parmi de nombreux autres `<img>` non liés au résultat présents ailleurs sur la page.
 2. ✅ Police custom (`font_file`) bien appliquée visuellement au rendu final, sans besoin de changer `fontt`.
 3. ✅ start.gg confirmé comme format de lien d'entrée (testé avec succès : `la-tea-party-50`).
-4. ✅ Sélection des persos joués + résolution de couleur testées de bout en bout avec un vrai token start.gg sur `la-tea-party-50` (43 participant·es).
+4. ✅ Sélection des persos joués + résolution de couleur testées de bout en bout avec un vrai token start.gg sur `la-tea-party-50` (43 participant.e.s).
 5. ⏳ Vérifier qu'il n'y a pas de contrainte serveur sur le format/poids des images `background`/`logo` (testé en `.png` et `.webp`, tous deux acceptés sans erreur).
 6. ⏳ Valider avec l'utilisateur la table d'alias de personnages au fur et à mesure que de nouveaux cas apparaissent dans le xlsx ou dans les données start.gg.
-7. ⏳ `perPage: 25` sur la requête start.gg est un choix empirique (60 dépasse la limite de complexité de l'API) ; à re-vérifier sur des tournois beaucoup plus gros (centaines de participant·es, beaucoup de sets).
+7. ⏳ `perPage: 25` sur la requête start.gg est un choix empirique (60 dépasse la limite de complexité de l'API) ; à re-vérifier sur des tournois beaucoup plus gros (centaines de participant.e.s, beaucoup de sets).

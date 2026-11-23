@@ -397,6 +397,82 @@ def extract_result_image(html: str):
 
 
 # ---------------------------------------------------------------------------
+# Mode revue : ouvre un vrai navigateur, pré-rempli avec nos calculs, pour
+# relecture/modification manuelle avant de cliquer soi-même sur "Generate".
+# ---------------------------------------------------------------------------
+
+SELECT_SUFFIXES = ("_char", "_color", "_flag", "_extra1", "_extra_color1", "_extra2", "_extra_color2")
+GLOBAL_SELECT_NAMES = {"fontt"}
+SKIP_FIELDS = {"csrfmiddlewaretoken"}
+
+
+def open_for_review(tournament_link, fields, checkboxes, font_file, background, logo):
+    from playwright.sync_api import sync_playwright
+
+    # profil Chrome dédié et isolé : éviter de piloter/perturber le Chrome
+    # personnel de l'utilisateur (déjà ouvert, verrou de profil, sessions...).
+    profile_dir = Path(__file__).parent.parent / ".browser-profile"
+    profile_dir.mkdir(exist_ok=True)
+
+    with sync_playwright() as p:
+        context = p.chromium.launch_persistent_context(
+            str(profile_dir), channel="chrome", headless=False
+        )
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(BASE_URL)
+
+        # form2 (import de lien) est masqué par défaut ; il faut d'abord
+        # cliquer sur l'onglet "Enter tournament link" pour le révéler.
+        page.click("button.sggform")
+        page.fill("form.form2 [name='event']", tournament_link)
+        page.click("form.form2 input[type='submit']")
+        page.wait_for_selector("form.form1 [name='player1_name']")
+
+        # "Layout Options" (couleurs) et "Font Options" (police) sont des
+        # sections repliées par défaut (display:none) qu'il faut déplier
+        # avant de pouvoir y remplir quoi que ce soit.
+        page.click("span.togglelayopt")
+        page.click("span.togglefontopt")
+        # chaque joueur a son propre "+" repliant les champs perso secondaire/
+        # tertiaire (extra1/extra2) : il faut cliquer les 8.
+        for toggle in page.locator("span.showextra").all():
+            toggle.click()
+
+        for name, value in fields.items():
+            if name in SKIP_FIELDS:
+                continue
+            is_select = name in GLOBAL_SELECT_NAMES or name.endswith(SELECT_SUFFIXES)
+            locator = page.locator(f"form.form1 [name='{name}']")
+            if locator.count() == 0:
+                continue
+            if is_select:
+                locator.select_option(value)
+            else:
+                locator.fill(value)
+
+        for name, checked in checkboxes.items():
+            locator = page.locator(f"form.form1 [name='{name}']")
+            if locator.count() == 0:
+                continue
+            if checked:
+                locator.check()
+            else:
+                locator.uncheck()
+
+        page.set_input_files("form.form1 [name='font_file']", str(font_file))
+        page.set_input_files("form.form1 [name='background']", str(background))
+        page.set_input_files("form.form1 [name='logo']", str(logo))
+
+        print("\nFormulaire pré-rempli ouvert dans le navigateur — relis/modifie à ta guise,")
+        print("puis clique toi-même sur \"Generate\". Ferme la fenêtre pour rendre la main ici.")
+        try:
+            page.wait_for_event("close", timeout=24 * 3600 * 1000)  # jusqu'à 24h, pas de vraie limite utile ici
+        except Exception:
+            pass
+        context.close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -420,6 +496,11 @@ def main():
     parser.add_argument(
         "--outdir", type=Path,
         default=Path(__file__).parent.parent / "output",
+    )
+    parser.add_argument(
+        "--review", action="store_true",
+        help="Bloque avant la génération : ouvre un navigateur pré-rempli avec nos calculs "
+             "pour relecture/modification manuelle (nécessite `pip install playwright`).",
     )
     args = parser.parse_args()
 
@@ -448,6 +529,11 @@ def main():
         print("\nLignes xlsx ignorées :")
         for item in ignored:
             print(" -", item)
+
+    if args.review:
+        print("\n[4/4] Mode revue : ouverture du navigateur, génération non lancée")
+        open_for_review(args.tournament_link, fields, checkboxes, args.font, args.background, args.logo)
+        return
 
     print("\n[4/4] POST génération finale (police + couleurs + background + logo)")
     result_html = submit_generation(session, csrf, fields, checkboxes, args.font, args.background, args.logo)

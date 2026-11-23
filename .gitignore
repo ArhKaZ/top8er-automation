@@ -8,3 +8,6 @@ output/*.response.html
 
 __pycache__/
 *.pyc
+
+# profil Chrome isolé utilisé par --review
+.browser-profile/
