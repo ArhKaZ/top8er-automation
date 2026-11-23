@@ -40,6 +40,13 @@ def normalize_char_name(name: str) -> str:
     return name
 
 
+def make_inclusive(text: str) -> str:
+    """Remplace "participant(e)s" par "participant.e.s" (écriture inclusive),
+    utilisé sur le texte du bas importé automatiquement par Top8er (date/
+    ville/nombre de participant.e.s)."""
+    return re.sub(r"\b([Pp]articipant)e?s\b", r"\1.e.s", text)
+
+
 # ---------------------------------------------------------------------------
 # Step 1/2: fetch the page and parse the pre-filled form1 after importing the
 # tournament link via form2.
@@ -355,8 +362,6 @@ def apply_overrides(fields: dict, skin_db: dict, usage: dict, roster: list, repo
 def submit_generation(session, csrf_token, fields, checkboxes, font_file, background, logo):
     data = {"csrfmiddlewaretoken": csrf_token}
     data.update(fields)
-    data["lcolor1"] = FIXED_LCOLOR1
-    data["lcolor2"] = FIXED_LCOLOR2
     for name, checked in checkboxes.items():
         if checked:
             data[name] = "on"
@@ -515,12 +520,16 @@ def main():
     fields, checkboxes, roster, csrf2 = parse_form1_fields(imported_html)
     if csrf2:
         csrf = csrf2
+    if "btext" in fields:
+        fields["btext"] = make_inclusive(fields["btext"])
 
     print("[3/4] Résolution des skins depuis le xlsx + usage réel des persos (API start.gg)")
     skin_db, ignored = load_skin_db(args.skins, roster)
     usage = fetch_character_usage(args.startgg_token, args.tournament_link)
     report = []
     apply_overrides(fields, skin_db, usage, roster, report)
+    fields["lcolor1"] = FIXED_LCOLOR1
+    fields["lcolor2"] = FIXED_LCOLOR2
 
     print("\n--- Rapport ---")
     for line in report:
