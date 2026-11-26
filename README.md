@@ -58,7 +58,9 @@ Ce repo ne versionne pas les données spécifiques à un contexte (pseudos réel
 police avec licence non vérifiée). À placer soi-même avant de lancer le script :
 
 - `data/skin.xlsx` — le fichier de skins (voir format détaillé ci-dessous).
-- `data/Basteleur-Bold.ttf` (ou une autre police, en passant `--font`).
+
+La police est facultative : pour utiliser une police custom, passer son chemin avec `--font`.
+Sans cette option, aucun fichier de police n'est envoyé à Top8er.
 
 ### Format du fichier skin (`data/skin.xlsx`)
 
@@ -109,15 +111,18 @@ manuelle dans le fichier généré (qui a déjà les listes déroulantes perso/s
 
 ```bash
 python3 src/top8er_bot.py "<lien de tournoi start.gg>" \
-  --background <image.png/webp> \
-  --logo <image.png/webp> \
-  --startgg-token <token API start.gg>
+  --startgg-token <token API start.gg> \
+  --main-color "#f1c4ee" \
+  --highlight-color "#cecece"
 ```
+
+Les options `--background <image.png/webp>` et `--logo <logo.png/webp>` sont facultatives ;
+ajoute-les à la commande si tu veux fournir ces fichiers.
 
 **Windows (PowerShell ou invite de commandes), depuis la racine du repo :**
 
 ```powershell
-python src\top8er_bot.py "<lien de tournoi start.gg>" --background <image.png> --logo <logo.png> --startgg-token <token API start.gg>
+python src\top8er_bot.py "<lien de tournoi start.gg>" --startgg-token <token API start.gg>
 ```
 
 (sur Windows, la commande est `python` et non `python3` ; les chemins utilisent `\` au lieu
@@ -132,11 +137,13 @@ Le token API start.gg se génère gratuitement sur
 | Argument | Obligatoire | Rôle |
 |---|---|---|
 | `tournament_link` (positionnel) | oui | Lien start.gg du bracket |
-| `--background` | oui | Image de fond du visuel |
-| `--logo` | oui | Logo (remplace le texte en haut à gauche) |
+| `--background` | non | Image de fond du visuel (non envoyée si omise) |
+| `--logo` | non | Logo (remplace le texte en haut à gauche ; non envoyé si omis) |
 | `--startgg-token` | oui | Token API start.gg |
 | `--skins` | non | Chemin du xlsx de skins (défaut : `data/skin.xlsx`) |
-| `--font` | non | Chemin de la police (défaut : `data/Basteleur-Bold.ttf`) |
+| `--font` | non | Chemin facultatif de la police custom (aucun fichier envoyé si omis) |
+| `--main-color` | non | Couleur principale au format `#RRGGBB` (défaut : `#f1c4ee`) |
+| `--highlight-color` | non | Couleur de surbrillance au format `#RRGGBB` (défaut : `#cecece`) |
 | `--outdir` | non | Dossier de sortie (défaut : `output/`) |
 | `--review` | non | Bloque avant la génération finale : ouvre un vrai navigateur (profil Chrome isolé, dédié à cet usage) avec le formulaire déjà pré-rempli par nos calculs (skins + persos joués), pour relecture/modification manuelle. Rien n'est généré automatiquement : c'est à toi de cliquer sur "Generate" dans le navigateur. Le script rend la main quand tu fermes la fenêtre. |
 

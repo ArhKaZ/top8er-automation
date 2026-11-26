@@ -7,6 +7,7 @@ import base64
 import datetime
 import re
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 import openpyxl
@@ -14,9 +15,6 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.top8er.com/old/ssbu"
-
-FIXED_LCOLOR1 = "#f1c4ee"
-FIXED_LCOLOR2 = "#cecece"
 
 ALIASES = {
     "r.o.b": "ROB",
@@ -27,6 +25,12 @@ ALIASES = {
     "pyra & mythra": "Pyra and Mythra",  # ordre non précisé dans le xlsx, "Pyra and Mythra" pris par défaut
     "random character": "Random",  # libellé renvoyé par l'API start.gg pour une sélection aléatoire
 }
+
+
+def parse_hex_color(value: str) -> str:
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise argparse.ArgumentTypeError("la couleur doit être au format hexadécimal #RRGGBB")
+    return value
 
 
 def normalize(text: str) -> str:
@@ -393,16 +397,15 @@ def submit_generation(session, csrf_token, fields, checkboxes, font_file, backgr
         if checked:
             data[name] = "on"
 
-    files = {
-        "font_file": (font_file.name, open(font_file, "rb")),
-        "background": (background.name, open(background, "rb")),
-        "logo": (logo.name, open(logo, "rb")),
-    }
-    try:
+    with ExitStack() as stack:
+        files = {}
+        if font_file is not None:
+            files["font_file"] = (font_file.name, stack.enter_context(font_file.open("rb")))
+        if background is not None:
+            files["background"] = (background.name, stack.enter_context(background.open("rb")))
+        if logo is not None:
+            files["logo"] = (logo.name, stack.enter_context(logo.open("rb")))
         r = session.post(BASE_URL, data=data, files=files, headers={"Referer": BASE_URL}, timeout=120)
-    finally:
-        for _, (_, fh) in files.items():
-            fh.close()
     r.raise_for_status()
     return r.text
 
@@ -491,9 +494,12 @@ def open_for_review(tournament_link, fields, checkboxes, font_file, background, 
             else:
                 locator.uncheck()
 
-        page.set_input_files("form.form1 [name='font_file']", str(font_file))
-        page.set_input_files("form.form1 [name='background']", str(background))
-        page.set_input_files("form.form1 [name='logo']", str(logo))
+        if font_file is not None:
+            page.set_input_files("form.form1 [name='font_file']", str(font_file))
+        if background is not None:
+            page.set_input_files("form.form1 [name='background']", str(background))
+        if logo is not None:
+            page.set_input_files("form.form1 [name='logo']", str(logo))
 
         print("\nFormulaire pré-rempli ouvert dans le navigateur — relis/modifie à ta guise,")
         print("puis clique toi-même sur \"Generate\". Ferme la fenêtre pour rendre la main ici.")
@@ -511,19 +517,27 @@ def open_for_review(tournament_link, fields, checkboxes, font_file, background, 
 def main():
     parser = argparse.ArgumentParser(description="POC automatisation Top8er SSBU")
     parser.add_argument("tournament_link", help="Lien start.gg/challonge/tonamel/parry.gg")
-    parser.add_argument("--background", required=True, type=Path, help="Image de fond")
-    parser.add_argument("--logo", required=True, type=Path, help="Logo")
+    parser.add_argument("--background", type=Path, help="Image de fond (facultative)")
+    parser.add_argument("--logo", type=Path, help="Logo (facultatif)")
     parser.add_argument(
         "--startgg-token", required=True,
         help="Token API start.gg (developer.start.gg -> Developer Settings -> Create new token)",
     )
     parser.add_argument(
         "--skins", type=Path,
-        default=Path(__file__).parent.parent / "data" / "skin.xlsx",
+        default=Path(__file__).parent.parent / "data" / "skins_joueurs.xlsx",
     )
     parser.add_argument(
         "--font", type=Path,
-        default=Path(__file__).parent.parent / "data" / "Basteleur-Bold.ttf",
+        help="Fichier de police custom (facultatif, non envoyé si omis)",
+    )
+    parser.add_argument(
+        "--main-color", type=parse_hex_color, default="#f1c4ee",
+        help="Couleur principale au format hexadécimal #RRGGBB (défaut : #f1c4ee)",
+    )
+    parser.add_argument(
+        "--highlight-color", type=parse_hex_color, default="#cecece",
+        help="Couleur de surbrillance au format hexadécimal #RRGGBB (défaut : #cecece)",
     )
     parser.add_argument(
         "--outdir", type=Path,
@@ -555,8 +569,8 @@ def main():
     usage = fetch_character_usage(args.startgg_token, args.tournament_link)
     report = []
     apply_overrides(fields, skin_db, usage, roster, report)
-    fields["lcolor1"] = FIXED_LCOLOR1
-    fields["lcolor2"] = FIXED_LCOLOR2
+    fields["lcolor1"] = args.main_color
+    fields["lcolor2"] = args.highlight_color
 
     print("\n--- Rapport ---")
     for line in report:
@@ -571,7 +585,7 @@ def main():
         open_for_review(args.tournament_link, fields, checkboxes, args.font, args.background, args.logo)
         return
 
-    print("\n[4/4] POST génération finale (police + couleurs + background + logo)")
+    print("\n[4/4] POST génération finale")
     result_html = submit_generation(session, csrf, fields, checkboxes, args.font, args.background, args.logo)
 
     args.outdir.mkdir(parents=True, exist_ok=True)

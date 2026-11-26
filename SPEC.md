@@ -6,7 +6,7 @@ Générer automatiquement un visuel "Top 8" sur https://www.top8er.com/old/ssbu 
 1. d'un lien de tournoi (start.gg / challonge / tonamel / parry.gg) pour les noms de joueurs et placements,
 2. des personnages **réellement joués** par chaque joueur pendant le tournoi (API start.gg, comptage game par game — voir section dédiée), pour décider quels persos afficher,
 3. d'un fichier de référence des skins (`Skins des joueurs et joueuses.xlsx`) pour la couleur de chaque perso retenu, quand elle est connue,
-4. d'une police custom (`Basteleur-Bold.ttf`) et d'un jeu de couleurs fixe.
+4. éventuellement d'une police custom, et de couleurs configurables en arguments CLI.
 
 Le site ne propose pas d'API JSON : c'est une app Django classique, formulaire HTML → POST multipart avec jeton CSRF. L'automatisation se fait par requêtes HTTP (pas besoin de navigateur headless). Pour l'usage réel des personnages, une requête supplémentaire est faite vers l'API GraphQL de start.gg (`api.start.gg/gql/alpha`), qui nécessite un token d'authentification.
 
@@ -16,14 +16,14 @@ Le site ne propose pas d'API JSON : c'est une app Django classique, formulaire H
 |---|---|
 | Lien de tournoi | fourni par l'utilisateur à chaque exécution (CLI arg)<br>ex. testé : `start.gg/tournament/la-tea-party-50/event/ultimate-singles/brackets/2458265/3533671` |
 | Fichier skins | `data/skin.xlsx` (format triplet, colonnes : Joueur, Perso, skin — voir plus bas) |
-| Police custom | `~/Downloads/Basteleur-Bold.ttf` |
-| Main Color | `#f1c4ee` → champ `lcolor1` |
-| Highlight Color | `#CECECE` → champ `lcolor2` |
-| Background image | fournie par l'utilisateur à chaque exécution (argument CLI, chemin de fichier image) → champ `background` |
-| Logo | fournie par l'utilisateur à chaque exécution (argument CLI, chemin de fichier image) → champ `logo` |
+| Police custom | option CLI `--font` (facultative ; aucun fichier envoyé si omise) |
+| Main Color | argument `--main-color` (défaut `#f1c4ee`) → champ `lcolor1` |
+| Highlight Color | argument `--highlight-color` (défaut `#cecece`) → champ `lcolor2` |
+| Background image | option CLI `--background` (facultative, chemin de fichier image) → champ `background` si fournie |
+| Logo | option CLI `--logo` (facultative, chemin de fichier image) → champ `logo` si fourni |
 | Token API start.gg | fourni par l'utilisateur à chaque exécution (argument CLI `--startgg-token`), généré sur developer.start.gg → Developer Settings → Create new token |
 
-Ces fichiers sources (xlsx, police, background, logo) devront être copiés/référencés dans le dossier du projet (`top8er-automation/data/`) plutôt que lus directement depuis `~/Downloads` en dur, pour que le script soit reproductible — à l'exception de la background image et du logo qui varient par tournoi et sont donc passés en argument à chaque exécution (comme le lien de tournoi), pas committés dans `data/`.
+Le fichier de skins devra être placé dans le dossier du projet (`top8er-automation/data/`). La police custom, si elle est utilisée, et les images background/logo peuvent être fournies avec leurs arguments CLI, sans être committées dans `data/`.
 
 ## Flux d'exécution (2 requêtes POST successives, même session)
 
@@ -35,7 +35,7 @@ Ces fichiers sources (xlsx, police, background, logo) devront être copiés/réf
 3. **Transformation** : interroger l'API start.gg pour l'usage réel des personnages, sélectionner les persos à afficher par joueur, puis appliquer la couleur depuis le xlsx (ou la couleur par défaut) sur les champs extraits à l'étape 2 (voir section "Sélection des personnages à afficher").
 
 > **Validé en conditions réelles** avec le lien de test ci-dessus : l'étape 2 fonctionne, Top8er a importé 8 joueurs (`ECR BLS | Slacker`, `KamaGi`, `CTR | SimonF`, `E0 | PINGU | Ana`, `MPT | J44J`, `Tap Tap Tap | Kensi1313`, `Djacky`, `NES | Gwermasterking`) avec un perso deviné pour chacun (Palutena, Min Min, Falco, Mii Brawler, Wolf, Fox, Sora, Min Min). Les tags start.gg suivent un format `EQUIPE | Pseudo`, parfois à plusieurs segments (`"E0 | PINGU | Ana"`) — le matching nom-joueur (règle 1 ci-dessous) doit découper sur `|` et essayer chaque segment, pas seulement le dernier.
-4. **POST** vers la même URL avec le formulaire `form1` complet (tous les champs `playerN_*` + options globales), en incluant l'upload des fichiers `font_file`, `background` et `logo`. 
+4. **POST** vers la même URL avec le formulaire `form1` complet (tous les champs `playerN_*` + options globales), en incluant uniquement les fichiers fournis (`font_file`, `background`, `logo`).
    - → La réponse contient le visuel généré (probablement une image, embarquée au niveau de l'ancre `#result` dans le HTML — à confirmer à l'implémentation : image inline en base64, ou URL vers un fichier statique généré côté serveur). Le script doit sauvegarder cette image en local.
 
 ## Mapping des champs form1 (rappel du schéma réel du site)
@@ -50,12 +50,12 @@ Pour chaque joueur `N` de 1 à 8 :
 - `playerN_flag`, `playerN_portrait`, `playerN_custom_flag` : **non gérés par cette automatisation** — laisser la valeur renvoyée par Top8er après l'étape 2 (généralement `"None"` / vide), sauf évolution future demandée.
 
 Options globales à fixer dans toutes les générations :
-- `lcolor1` = `#f1c4ee`
-- `lcolor2` = `#CECECE`
-- `font_file` = upload de `Basteleur-Bold.ttf`
+- `lcolor1` = valeur de `--main-color` (défaut `#f1c4ee`, format `#RRGGBB`)
+- `lcolor2` = valeur de `--highlight-color` (défaut `#cecece`, format `#RRGGBB`)
+- `font_file` = upload du fichier passé avec `--font`, si fourni
 - `fontt` = laisser la valeur par défaut (`auto`) ; **hypothèse à vérifier à l'implémentation** : un `font_file` uploadé est-il prioritaire sur la valeur de `fontt` ? Si le rendu final n'utilise pas la police custom, il faudra tester les 3 valeurs de `fontt` en combinaison.
-- `background` = upload de l'image passée en argument CLI (obligatoire par exécution)
-- `logo` = upload de l'image passée en argument CLI (obligatoire par exécution)
+- `background` = upload de l'image passée en argument CLI `--background`, si fournie
+- `logo` = upload de l'image passée en argument CLI `--logo`, si fourni
 - Reste des options (`ttext`, `btext`, `url`, `darken_bg`, `blacksquares`, `charshadow`, `prmode`, `fcolor1/2`, `fscolor1/2`) : garder les valeurs par défaut du formulaire (non spécifiées par l'utilisateur).
 
 ## Sélection des personnages à afficher
@@ -113,7 +113,7 @@ Une ligne = un triplet `Joueur | Perso | skin` (plus de colonnes MAIN/SECONDARY/
 Option qui bloque avant la génération finale (étape 4) : au lieu du POST final via `requests`, elle pilote un vrai navigateur (Playwright, Chrome système via `channel="chrome"`, profil isolé dédié pour ne pas interférer avec le Chrome personnel de l'utilisateur) qui :
 
 1. navigue sur le site, importe le tournoi (reproduit l'étape 2 depuis le navigateur, avec sa propre session/CSRF) ;
-2. remplit le formulaire `form1` avec exactement les valeurs calculées par le script (skins + persos joués + couleurs/police/background/logo fixes) ;
+2. remplit le formulaire `form1` avec les valeurs calculées par le script (skins + persos joués + couleurs/police, avec background et logo uniquement s'ils sont fournis) ;
 3. laisse la fenêtre ouverte, sans cliquer sur "Generate" : l'utilisateur relit/modifie à la main, puis clique lui-même quand il est prêt. Le script rend la main quand la fenêtre est fermée.
 
 > **Pièges rencontrés et corrigés en conditions réelles** : plusieurs sections du formulaire sont repliées par défaut (`display:none`) et doivent être dépliées par un clic avant de pouvoir y écrire quoi que ce soit : l'onglet "Enter tournament link" (`button.sggform`) pour révéler `form2`, "+ Layout Options" (`span.togglelayopt`, contient `lcolor1`/`lcolor2`) et "+ Font Options" (`span.togglefontopt`, contient `fontt`/`font_file`), ainsi qu'un bouton "+" (`span.showextra`) **par joueur** (8 au total) pour révéler les champs perso secondaire/tertiaire (`extra1`/`extra2`).
