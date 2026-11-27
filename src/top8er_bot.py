@@ -15,6 +15,26 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.top8er.com/old/ssbu"
+DATA_DIR = Path(__file__).parent.parent / "data"
+
+EVENT_PRESETS = {
+    "tea_party": {
+        "logo": DATA_DIR / "tea_party/logo_tea_party.png",
+        "background": DATA_DIR / "tea_party/background_tea_party.png",
+        "main_color": "#f1c4ee",
+        "highlight_color": "#cecece",
+    },
+    "saucismash": {
+        "main_color": "#182A45",
+        "highlight_color": "#204d74",
+    },
+    "sauria": {
+        "logo": DATA_DIR / "logo_sauria.png",
+        "background": DATA_DIR / "background_sauria.png",
+        "main_color": "#182A45",
+        "highlight_color": "#204d74",
+    },
+}
 
 ALIASES = {
     "r.o.b": "ROB",
@@ -31,6 +51,14 @@ def parse_hex_color(value: str) -> str:
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
         raise argparse.ArgumentTypeError("la couleur doit être au format hexadécimal #RRGGBB")
     return value
+
+
+def apply_event_preset(args):
+    preset = EVENT_PRESETS.get(args.event, {})
+    args.main_color = args.main_color or preset.get("main_color", "#f1c4ee")
+    args.highlight_color = args.highlight_color or preset.get("highlight_color", "#cecece")
+    args.background = args.background or preset.get("background")
+    args.logo = args.logo or preset.get("logo")
 
 
 def normalize(text: str) -> str:
@@ -517,6 +545,10 @@ def open_for_review(tournament_link, fields, checkboxes, font_file, background, 
 def main():
     parser = argparse.ArgumentParser(description="POC automatisation Top8er SSBU")
     parser.add_argument("tournament_link", help="Lien start.gg/challonge/tonamel/parry.gg")
+    parser.add_argument(
+        "--event", choices=EVENT_PRESETS,
+        help="Preset de visuel (tea_party, saucismash ou sauria)",
+    )
     parser.add_argument("--background", type=Path, help="Image de fond (facultative)")
     parser.add_argument("--logo", type=Path, help="Logo (facultatif)")
     parser.add_argument(
@@ -532,11 +564,11 @@ def main():
         help="Fichier de police custom (facultatif, non envoyé si omis)",
     )
     parser.add_argument(
-        "--main-color", type=parse_hex_color, default="#f1c4ee",
+        "--main-color", type=parse_hex_color,
         help="Couleur principale au format hexadécimal #RRGGBB (défaut : #f1c4ee)",
     )
     parser.add_argument(
-        "--highlight-color", type=parse_hex_color, default="#cecece",
+        "--highlight-color", type=parse_hex_color,
         help="Couleur de surbrillance au format hexadécimal #RRGGBB (défaut : #cecece)",
     )
     parser.add_argument(
@@ -549,6 +581,12 @@ def main():
              "pour relecture/modification manuelle (nécessite `pip install playwright`).",
     )
     args = parser.parse_args()
+    apply_event_preset(args)
+
+    for option in ("background", "logo", "font"):
+        path = getattr(args, option)
+        if path is not None and not path.is_file():
+            parser.error(f"fichier {option} introuvable : {path}")
 
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0"})

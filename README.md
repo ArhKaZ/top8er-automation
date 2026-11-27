@@ -119,6 +119,17 @@ python3 src/top8er_bot.py "<lien de tournoi start.gg>" \
 Les options `--background <image.png/webp>` et `--logo <logo.png/webp>` sont facultatives ;
 ajoute-les à la commande si tu veux fournir ces fichiers.
 
+Des presets peuvent aussi être sélectionnés avec `--event` :
+
+```bash
+python3 src/top8er_bot.py "<lien de tournoi start.gg>" --startgg-token <token> --event tea_party
+```
+
+Les images `logo_tea_party.png`, `background_tea_party.png`, `logo_sauria.png` et
+`background_sauria.png` sont à placer dans `data/`. Une option `--logo`, `--background`,
+`--main-color` ou `--highlight-color` fournie explicitement remplace la valeur correspondante
+du preset. `saucismash` n'applique ni logo ni background.
+
 **Windows (PowerShell ou invite de commandes), depuis la racine du repo :**
 
 ```powershell
@@ -137,13 +148,14 @@ Le token API start.gg se génère gratuitement sur
 | Argument | Obligatoire | Rôle |
 |---|---|---|
 | `tournament_link` (positionnel) | oui | Lien start.gg du bracket |
+| `--event` | non | Preset : `tea_party`, `saucismash` ou `sauria` |
 | `--background` | non | Image de fond du visuel (non envoyée si omise) |
 | `--logo` | non | Logo (remplace le texte en haut à gauche ; non envoyé si omis) |
 | `--startgg-token` | oui | Token API start.gg |
 | `--skins` | non | Chemin du xlsx de skins (défaut : `data/skin.xlsx`) |
 | `--font` | non | Chemin facultatif de la police custom (aucun fichier envoyé si omis) |
-| `--main-color` | non | Couleur principale au format `#RRGGBB` (défaut : `#f1c4ee`) |
-| `--highlight-color` | non | Couleur de surbrillance au format `#RRGGBB` (défaut : `#cecece`) |
+| `--main-color` | non | Couleur principale au format `#RRGGBB` (défaut hors preset : `#f1c4ee`) |
+| `--highlight-color` | non | Couleur de surbrillance au format `#RRGGBB` (défaut hors preset : `#cecece`) |
 | `--outdir` | non | Dossier de sortie (défaut : `output/`) |
 | `--review` | non | Bloque avant la génération finale : ouvre un vrai navigateur (profil Chrome isolé, dédié à cet usage) avec le formulaire déjà pré-rempli par nos calculs (skins + persos joués), pour relecture/modification manuelle. Rien n'est généré automatiquement : c'est à toi de cliquer sur "Generate" dans le navigateur. Le script rend la main quand tu fermes la fenêtre. |
 

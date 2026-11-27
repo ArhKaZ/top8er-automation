@@ -15,15 +15,22 @@ Le site ne propose pas d'API JSON : c'est une app Django classique, formulaire H
 | Entrée | Valeur / emplacement |
 |---|---|
 | Lien de tournoi | fourni par l'utilisateur à chaque exécution (CLI arg)<br>ex. testé : `start.gg/tournament/la-tea-party-50/event/ultimate-singles/brackets/2458265/3533671` |
+| Preset d'événement | option CLI `--event` : `tea_party`, `saucismash` ou `sauria` (facultative) |
 | Fichier skins | `data/skin.xlsx` (format triplet, colonnes : Joueur, Perso, skin — voir plus bas) |
 | Police custom | option CLI `--font` (facultative ; aucun fichier envoyé si omise) |
 | Main Color | argument `--main-color` (défaut `#f1c4ee`) → champ `lcolor1` |
 | Highlight Color | argument `--highlight-color` (défaut `#cecece`) → champ `lcolor2` |
 | Background image | option CLI `--background` (facultative, chemin de fichier image) → champ `background` si fournie |
 | Logo | option CLI `--logo` (facultative, chemin de fichier image) → champ `logo` si fourni |
+| Presets d'images | `data/logo_tea_party.png`, `data/background_tea_party.png`, `data/logo_sauria.png` et `data/background_sauria.png` |
 | Token API start.gg | fourni par l'utilisateur à chaque exécution (argument CLI `--startgg-token`), généré sur developer.start.gg → Developer Settings → Create new token |
 
 Le fichier de skins devra être placé dans le dossier du projet (`top8er-automation/data/`). La police custom, si elle est utilisée, et les images background/logo peuvent être fournies avec leurs arguments CLI, sans être committées dans `data/`.
+
+Le preset `tea_party` utilise `#f1c4ee` / `#cecece` avec son logo et son background ;
+`saucismash` utilise `#182A45` / `#204d74` sans image ; `sauria` utilise ces deux dernières
+couleurs avec son logo et son background. Les options de couleurs et d'images données
+explicitement sur la ligne de commande remplacent les valeurs correspondantes du preset.
 
 ## Flux d'exécution (2 requêtes POST successives, même session)
 
