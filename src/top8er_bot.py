@@ -71,7 +71,15 @@ def normalize(text: str) -> str:
 
 def normalize_char_name(name: str) -> str:
     name = re.sub(r"\s+", " ", str(name).strip())
-    return name
+    return name.replace(".", "")
+
+
+def resolve_character_name(name: str, roster_norm: dict):
+    normalized = normalize_char_name(name).casefold()
+    alias = ALIASES.get(str(name).strip().casefold()) or ALIASES.get(normalized)
+    if alias is not None:
+        return roster_norm.get(normalize_char_name(alias).casefold(), alias)
+    return roster_norm.get(normalized)
 
 
 def make_inclusive(text: str) -> str:
@@ -177,9 +185,7 @@ def parse_skin_cell(raw, roster_norm: dict):
             return None, f"ambigu ou couleur manquante : {text!r}"
         color = digits[0]
 
-    key = ALIASES.get(char_part.casefold())
-    if key is None:
-        key = roster_norm.get(char_part.casefold())
+    key = resolve_character_name(char_part, roster_norm)
     if key is None:
         return None, f"personnage non reconnu : {char_part!r} (brut: {text!r})"
 
@@ -214,7 +220,7 @@ def load_skin_db(xlsx_path: Path, roster: list):
             continue  # ligne sans perso renseigné pour ce joueur
 
         char_part = normalize_char_name(str(char_raw))
-        official = ALIASES.get(char_part.casefold()) or roster_norm.get(char_part.casefold())
+        official = resolve_character_name(char_part, roster_norm)
         if official is None:
             ignored.append((name, char_raw, f"personnage non reconnu : {char_raw!r}"))
             continue
@@ -246,12 +252,8 @@ def load_skin_db(xlsx_path: Path, roster: list):
 
 
 def find_skin_entry(player_name: str, skin_db: dict):
-    candidates = [player_name] + player_name.split("|")
-    for cand in candidates:
-        key = normalize(cand)
-        if key in skin_db:
-            return skin_db[key]
-    return None
+    player_name = player_name.rsplit("|", 1)[-1]
+    return skin_db.get(normalize(player_name))
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +357,7 @@ def select_played_characters(usage_for_player: dict, roster_norm: dict):
     for char, n in qualifying:
         if len(resolved) >= 3:
             break
-        official = ALIASES.get(char.casefold()) or roster_norm.get(normalize_char_name(char).casefold())
+        official = resolve_character_name(char, roster_norm)
         if official is None:
             unresolved.append((char, n))
             continue

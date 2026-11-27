@@ -42,7 +42,7 @@ données explicitement sur la ligne de commande remplacent les valeurs correspon
    - → La réponse est une page HTML contenant le formulaire `form1` **pré-rempli** par Top8er (noms de joueurs importés + perso principal deviné automatiquement). Il faut parser cette réponse HTML (BeautifulSoup) pour extraire, pour chaque `playerN_*`, la valeur courante (`value=` pour les inputs, `selected` pour les `<select>`), ainsi que le nouveau `csrfmiddlewaretoken` (il peut changer).
 3. **Transformation** : interroger l'API start.gg pour l'usage réel des personnages, sélectionner les persos à afficher par joueur, puis appliquer la couleur depuis le xlsx (ou la couleur par défaut) sur les champs extraits à l'étape 2 (voir section "Sélection des personnages à afficher").
 
-> **Validé en conditions réelles** avec le lien de test ci-dessus : l'étape 2 fonctionne, Top8er a importé 8 joueurs (`ECR BLS | Slacker`, `KamaGi`, `CTR | SimonF`, `E0 | PINGU | Ana`, `MPT | J44J`, `Tap Tap Tap | Kensi1313`, `Djacky`, `NES | Gwermasterking`) avec un perso deviné pour chacun (Palutena, Min Min, Falco, Mii Brawler, Wolf, Fox, Sora, Min Min). Les tags start.gg suivent un format `EQUIPE | Pseudo`, parfois à plusieurs segments (`"E0 | PINGU | Ana"`) — le matching nom-joueur (règle 1 ci-dessous) doit découper sur `|` et essayer chaque segment, pas seulement le dernier.
+> **Validé en conditions réelles** avec le lien de test ci-dessus : l'étape 2 fonctionne, Top8er a importé 8 joueurs (`ECR BLS | Slacker`, `KamaGi`, `CTR | SimonF`, `E0 | PINGU | Ana`, `MPT | J44J`, `Tap Tap Tap | Kensi1313`, `Djacky`, `NES | Gwermasterking`) avec un perso deviné pour chacun (Palutena, Min Min, Falco, Mii Brawler, Wolf, Fox, Sora, Min Min). Les noms start.gg peuvent contenir un tag d'équipe avant `|` et plusieurs segments ; pour rapprocher le joueur du xlsx, seul le dernier segment (après le dernier `|`) est comparé.
 4. **POST** vers la même URL avec le formulaire `form1` complet (tous les champs `playerN_*` + options globales), en incluant uniquement les fichiers fournis (`font_file`, `background`, `logo`).
    - → La réponse contient le visuel généré (probablement une image, embarquée au niveau de l'ancre `#result` dans le HTML — à confirmer à l'implémentation : image inline en base64, ou URL vers un fichier statique généré côté serveur). Le script doit sauvegarder cette image en local.
 
@@ -101,9 +101,10 @@ Une ligne = un triplet `Joueur | Perso | skin` (plus de colonnes MAIN/SECONDARY/
 
 ### Règles de normalisation requises
 
-1. **Matching du nom de joueur** : comparaison insensible à la casse et aux espaces de début/fin, contre le `playerN_name` (= `entrant.name` start.gg). Les suffixes de type `*` en fin de nom (ex. `"Alexandre*"`) doivent être ignorés pour le matching mais signalés dans les logs. Les tags start.gg suivent un format `EQUIPE | Pseudo`, parfois à plusieurs segments (`"E0 | PINGU | Ana"`) : le matching découpe sur `|` et essaie chaque segment, pas seulement le dernier.
+1. **Matching du nom de joueur avec le xlsx** : partir de `playerN_name` (= `entrant.name` start.gg), ne garder que la partie après le dernier `|` (ex. `"Deer | Dickium Monstruosus"` → `"Dickium Monstruosus"`, `":3 | Alexandre*"` → `"Alexandre*"`), puis comparer au nom du xlsx sans tenir compte de la casse ni des espaces de début/fin. Les suffixes `*` en fin de nom doivent être ignorés pour le matching.
 2. **Résolution du nom de perso** : mapper la valeur de la colonne `Perso` vers la valeur exacte attendue par le `<select>` de Top8er via une **table d'alias** à construire, incluant au minimum les cas observés jusqu'ici (utile surtout pour la migration depuis l'ancien format, où les noms étaient en texte libre) :
    - `"R.O.B"` → `"ROB"`
+   - les points sont ignorés lors de la comparaison des noms : `"Bowser Jr"` et `"Bowser Jr."` désignent le même perso ; le libellé officiel du roster Top8er est conservé
    - `"Pac Man"` → `"Pac-Man"`
    - `"Palu"` / `"palu"` → `"Palutena"`
    - `"Dadidou"` → `"King Dedede"`
