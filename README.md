@@ -60,7 +60,8 @@ police avec licence non vérifiée). À placer soi-même avant de lancer le scri
 - `data/skin.xlsx` — le fichier de skins (voir format détaillé ci-dessous).
 
 La police est facultative : pour utiliser une police custom, passer son chemin avec `--font`.
-Sans cette option, aucun fichier de police n'est envoyé à Top8er.
+Le preset `tea_party` utilise automatiquement `data/tea_party/Basteleur-Bold.ttf` ;
+`--font` permet de la remplacer. Sans preset et sans `--font`, aucune police n'est envoyée.
 
 ### Format du fichier skin (`data/skin.xlsx`)
 
@@ -125,10 +126,11 @@ Des presets peuvent aussi être sélectionnés avec `--event` :
 python3 src/top8er_bot.py "<lien de tournoi start.gg>" --startgg-token <token> --event tea_party
 ```
 
-Les images `logo_tea_party.png`, `background_tea_party.png`, `logo_sauria.png` et
+Les images `logo_tea_party.png`, `background_tea_party.png` et la police
+`Basteleur-Bold.ttf` sont à placer dans `data/tea_party/`. Les images `logo_sauria.png` et
 `background_sauria.png` sont à placer dans `data/`. Une option `--logo`, `--background`,
-`--main-color` ou `--highlight-color` fournie explicitement remplace la valeur correspondante
-du preset. `saucismash` n'applique ni logo ni background.
+`--font`, `--main-color` ou `--highlight-color` fournie explicitement remplace la valeur
+correspondante du preset. `saucismash` n'applique ni logo ni background.
 
 **Windows (PowerShell ou invite de commandes), depuis la racine du repo :**
 
@@ -153,7 +155,7 @@ Le token API start.gg se génère gratuitement sur
 | `--logo` | non | Logo (remplace le texte en haut à gauche ; non envoyé si omis) |
 | `--startgg-token` | oui | Token API start.gg |
 | `--skins` | non | Chemin du xlsx de skins (défaut : `data/skin.xlsx`) |
-| `--font` | non | Chemin facultatif de la police custom (aucun fichier envoyé si omis) |
+| `--font` | non | Chemin de la police custom (preset `tea_party` utilisé si omis) |
 | `--main-color` | non | Couleur principale au format `#RRGGBB` (défaut hors preset : `#f1c4ee`) |
 | `--highlight-color` | non | Couleur de surbrillance au format `#RRGGBB` (défaut hors preset : `#cecece`) |
 | `--outdir` | non | Dossier de sortie (défaut : `output/`) |

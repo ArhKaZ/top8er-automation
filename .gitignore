@@ -1,8 +1,3 @@
-# données locales (pseudos réels de joueurs, police avec licence non vérifiée) — fournir les siennes
-data/*.xlsx
-!data/skin.example.xlsx
-data/*.ttf
-
 # artefacts générés à l'exécution
 output/*.png
 output/*.response.html

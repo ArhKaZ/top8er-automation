@@ -21,6 +21,7 @@ EVENT_PRESETS = {
     "tea_party": {
         "logo": DATA_DIR / "tea_party/logo_tea_party.png",
         "background": DATA_DIR / "tea_party/background_tea_party.png",
+        "font": DATA_DIR / "tea_party/Basteleur-Bold.ttf",
         "main_color": "#f1c4ee",
         "highlight_color": "#cecece",
     },
@@ -59,6 +60,7 @@ def apply_event_preset(args):
     args.highlight_color = args.highlight_color or preset.get("highlight_color", "#cecece")
     args.background = args.background or preset.get("background")
     args.logo = args.logo or preset.get("logo")
+    args.font = args.font or preset.get("font")
 
 
 def normalize(text: str) -> str:
